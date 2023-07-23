@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 import { S3Client } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { createReadStream } from "fs";
@@ -7,7 +9,7 @@ import { program } from "commander";
 import { CLIArguments, Credentials } from "./interfaces/interfaces";
 import extensions from "./utilities/file-extensions";
 
-function run() {
+async function run() {
   const typeMessage = "Please provide a valid file path for uploading";
   const eventIdMessage = "Please provide a valid event id for uploading";
   program
@@ -27,7 +29,7 @@ function run() {
       BACKBLAZE_CDN_URL,
     } = process.env;
 
-    const destinationPath = `events${id}/media`;
+    const destinationPath = `events/${id}/media`;
 
     const credentials: Credentials = {
       BACKBLAZE_ACCESS_KEY_ID: BACKBLAZE_ACCESS_KEY_ID || "",
@@ -38,6 +40,7 @@ function run() {
       BACKBLAZE_CDN_URL: BACKBLAZE_CDN_URL || "",
     };
 
+    console.log({ credentials });
     return credentials;
   }
 
@@ -95,9 +98,9 @@ function run() {
     // Format as a stream, not a normal file
     const formattedFile = createReadStream(file);
     const uploadParams = {
-      Body: formattedFile.pipe(new PassThrough()),
       Bucket: BACKBLAZE_BUCKET_NAME,
       Key: `${BACKBLAZE_DESTINATION_PATH}/${fileName}`,
+      Body: formattedFile.pipe(new PassThrough()),
     };
 
     const b2Config: any = {
@@ -125,11 +128,12 @@ function run() {
       });
 
       parallelUploadB2.on("httpUploadProgress", (progress) => {
+        console.log({ progress });
         if (progress && progress.loaded && progress.total && progress.part) {
           const { part, loaded, total } = progress;
           const percentage = ((loaded / total) * 100).toFixed(2);
           const message = `${fileName} ----- Upload Progress: (${part})  ${percentage}%`;
-          console.log({ message });
+          console.log({ status: 100, message });
         }
       });
 
@@ -141,7 +145,9 @@ function run() {
     }
   }
 
-  return multipartUploadFileToB2(path, eventId);
+  console.log({ path, eventId });
+  const res = await multipartUploadFileToB2(path, eventId);
+  return res;
 }
 
 run();
