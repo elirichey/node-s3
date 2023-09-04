@@ -40,7 +40,6 @@ async function run() {
       BACKBLAZE_CDN_URL: BACKBLAZE_CDN_URL || "",
     };
 
-    console.log({ credentials });
     return credentials;
   }
 
@@ -138,7 +137,10 @@ async function run() {
       });
 
       const data = await parallelUploadB2.done();
-      if (data) return { data, fileType };
+      if (data) {
+        console.log("Upload Complete", { data, fileType });
+        return { data, fileType };
+      }
     } catch (e) {
       console.log({ status: 400, body: e });
       return e;
