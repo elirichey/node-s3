@@ -1,5 +1,7 @@
 export interface CLIArguments {
-  path: string;
+  path?: string;
+  key?: string;
+  burn?: boolean;
   eventId: string;
 }
 

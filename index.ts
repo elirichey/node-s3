@@ -1,6 +1,10 @@
 require("dotenv").config();
 
-import { S3Client } from "@aws-sdk/client-s3";
+import {
+  ListObjectsCommand,
+  DeleteObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { createReadStream } from "fs";
 import { PassThrough } from "stream";
@@ -10,15 +14,20 @@ import { CLIArguments, Credentials } from "./interfaces/interfaces";
 import extensions from "./utilities/file-extensions";
 
 async function run() {
-  const typeMessage = "Please provide a valid file path for uploading";
+  const pathMessage = "Please provide a valid file path for uploading";
+  const keyMessage = "Please provide a valid key";
+  const deleteMessage = "Please provide if value is true or false";
   const eventIdMessage = "Please provide a valid event id for uploading";
+
   program
-    .requiredOption("-p, --path <type>", typeMessage)
+    .option("-p, --path <type>", pathMessage)
+    .option("-k, --key <type>", keyMessage)
+    .option("-b, --burn <type>", deleteMessage)
     .requiredOption("-e, --eventId <type>", eventIdMessage);
 
   program.parse(process.argv);
   const options: CLIArguments = program.opts();
-  const { path, eventId } = options;
+  const { path, key, burn, eventId } = options;
 
   function setupUploadCredentials(id: string) {
     const {
@@ -79,6 +88,51 @@ async function run() {
     const fileName = pathParts[pathParts.length - 1];
     return fileName;
   }
+
+  // const testEventId = "c34e4d8e-a333-4f7e-be1e-8d4e1ee87be9";
+  // const postId = "feaf4caf-0e3e-488a-a376-99595af72695";
+  // const key = `events/${eventId}/media/${postId}`;
+
+  // List
+  async function listFilesFromS3(keyVal: string) {
+    const credentials: Credentials = setupUploadCredentials(eventId);
+    const {
+      BACKBLAZE_ACCESS_KEY_ID,
+      BACKBLAZE_SECRET_ACCESS_KEY,
+      BACKBLAZE_REGION,
+      BACKBLAZE_BUCKET_NAME,
+    } = credentials;
+
+    const b2Config: any = {
+      endpoint: `https://s3.${BACKBLAZE_REGION}.backblazeb2.com/`,
+      forcePathStyle: true,
+      region: BACKBLAZE_REGION,
+      credentials: {
+        accessKeyId: BACKBLAZE_ACCESS_KEY_ID,
+        secretAccessKey: BACKBLAZE_SECRET_ACCESS_KEY,
+      },
+    };
+
+    const b2Credentials = new S3Client(b2Config);
+    console.log({ status: 100, message: "B2Client Initialized" });
+
+    const params = {
+      Bucket: BACKBLAZE_BUCKET_NAME,
+      Key: key,
+    };
+
+    const listCommand = new ListObjectsCommand(params);
+    try {
+      const data = await b2Credentials.send(listCommand);
+      console.log({ status: 200, message: "File List", data });
+      return data;
+    } catch (e) {
+      console.log({ status: 400, body: e });
+      return e;
+    }
+  }
+
+  // Uploads
 
   async function multipartUploadFileToB2(file: any, id: string) {
     const credentials: Credentials = setupUploadCredentials(id);
@@ -147,9 +201,57 @@ async function run() {
     }
   }
 
-  console.log({ path, eventId });
-  const res = await multipartUploadFileToB2(path, eventId);
-  return res;
+  // Delete
+  async function deleteFilesFromS3(id: string, key: string) {
+    const credentials: Credentials = setupUploadCredentials(id);
+    const {
+      BACKBLAZE_ACCESS_KEY_ID,
+      BACKBLAZE_SECRET_ACCESS_KEY,
+      BACKBLAZE_REGION,
+      BACKBLAZE_BUCKET_NAME,
+    } = credentials;
+
+    const b2Config: any = {
+      endpoint: `https://s3.${BACKBLAZE_REGION}.backblazeb2.com/`,
+      forcePathStyle: true,
+      region: BACKBLAZE_REGION,
+      credentials: {
+        accessKeyId: BACKBLAZE_ACCESS_KEY_ID,
+        secretAccessKey: BACKBLAZE_SECRET_ACCESS_KEY,
+      },
+    };
+
+    const b2Credentials = new S3Client(b2Config);
+    console.log({ status: 100, message: "B2Client Initialized" });
+
+    const params = {
+      Bucket: BACKBLAZE_BUCKET_NAME,
+      Key: key,
+    };
+
+    const deleteCommand = new DeleteObjectCommand(params);
+    try {
+      const data = await b2Credentials.send(deleteCommand);
+      console.log({ status: 200, message: "File Deleted", data });
+      return data;
+    } catch (e) {
+      console.log({ status: 400, body: e });
+      return e;
+    }
+  }
+
+  console.log({ path, key, burn, eventId });
+
+  if (key && !path) {
+    const res = await listFilesFromS3(key);
+    return res;
+  } else if (burn && key) {
+    const res = await deleteFilesFromS3(eventId, key);
+    return res;
+  } else if (path && !key) {
+    const res = await multipartUploadFileToB2(path, eventId);
+    return res;
+  }
 }
 
 run();
