@@ -14,20 +14,22 @@ import { CLIArguments, Credentials } from "./interfaces/interfaces";
 import extensions from "./utilities/file-extensions";
 
 async function run() {
+  const eventIdMessage = "Please provide a valid event id for uploading";
+  const postIdMessage = "Please provide a valid event post id";
   const pathMessage = "Please provide a valid file path for uploading";
   const keyMessage = "Please provide a valid key";
   const deleteMessage = "Please provide if value is true or false";
-  const eventIdMessage = "Please provide a valid event id for uploading";
 
   program
+    .requiredOption("-e, --eventId <type>", eventIdMessage)
     .option("-p, --path <type>", pathMessage)
+    .option("-x, --post <type>", postIdMessage)
     .option("-k, --key <type>", keyMessage)
-    .option("-b, --burn <type>", deleteMessage)
-    .requiredOption("-e, --eventId <type>", eventIdMessage);
+    .option("-b, --burn <type>", deleteMessage);
 
   program.parse(process.argv);
   const options: CLIArguments = program.opts();
-  const { path, key, burn, eventId } = options;
+  const { eventId, post, path, key, burn } = options;
 
   function setupUploadCredentials(id: string) {
     const {
@@ -88,10 +90,6 @@ async function run() {
     const fileName = pathParts[pathParts.length - 1];
     return fileName;
   }
-
-  // const testEventId = "c34e4d8e-a333-4f7e-be1e-8d4e1ee87be9";
-  // const postId = "feaf4caf-0e3e-488a-a376-99595af72695";
-  // const key = `events/${eventId}/media/${postId}`;
 
   // List
   async function listFilesFromS3(keyVal: string) {
@@ -202,7 +200,7 @@ async function run() {
   }
 
   // Delete
-  async function deleteFilesFromS3(id: string, key: string) {
+  async function deleteFilesFromS3(id: string, postId: string) {
     const credentials: Credentials = setupUploadCredentials(id);
     const {
       BACKBLAZE_ACCESS_KEY_ID,
@@ -224,9 +222,48 @@ async function run() {
     const b2Credentials = new S3Client(b2Config);
     console.log({ status: 100, message: "B2Client Initialized" });
 
+    const keyVal = `events/${id}/media/${postId}`;
     const params = {
       Bucket: BACKBLAZE_BUCKET_NAME,
-      Key: key,
+      Key: keyVal,
+    };
+
+    const deleteCommand = new DeleteObjectCommand(params);
+    try {
+      const data = await b2Credentials.send(deleteCommand);
+      console.log({ status: 200, message: "File Deleted", data });
+      return data;
+    } catch (e) {
+      console.log({ status: 400, body: e });
+      return e;
+    }
+  }
+  async function deleteFileFromS3(id: string, postId: string) {
+    const credentials: Credentials = setupUploadCredentials(id);
+    const {
+      BACKBLAZE_ACCESS_KEY_ID,
+      BACKBLAZE_SECRET_ACCESS_KEY,
+      BACKBLAZE_REGION,
+      BACKBLAZE_BUCKET_NAME,
+    } = credentials;
+
+    const b2Config: any = {
+      endpoint: `https://s3.${BACKBLAZE_REGION}.backblazeb2.com/`,
+      forcePathStyle: true,
+      region: BACKBLAZE_REGION,
+      credentials: {
+        accessKeyId: BACKBLAZE_ACCESS_KEY_ID,
+        secretAccessKey: BACKBLAZE_SECRET_ACCESS_KEY,
+      },
+    };
+
+    const b2Credentials = new S3Client(b2Config);
+    console.log({ status: 100, message: "B2Client Initialized" });
+
+    const keyVal = `events/${id}/media/${postId}`;
+    const params = {
+      Bucket: BACKBLAZE_BUCKET_NAME,
+      Key: keyVal,
     };
 
     const deleteCommand = new DeleteObjectCommand(params);
@@ -240,18 +277,22 @@ async function run() {
     }
   }
 
-  console.log({ path, key, burn, eventId });
+  console.log({ eventId, path, post, key, burn });
 
   if (key && !path) {
     const res = await listFilesFromS3(key);
     return res;
-  } else if (burn && key) {
-    const res = await deleteFilesFromS3(eventId, key);
+  } else if (burn && post) {
+    const res = await deleteFileFromS3(eventId, post);
     return res;
   } else if (path && !key) {
     const res = await multipartUploadFileToB2(path, eventId);
     return res;
   }
 }
+
+// const testEventId = "c34e4d8e-a333-4f7e-be1e-8d4e1ee87be9";
+// const postId = "feaf4caf-0e3e-488a-a376-99595af72695";
+// const key = `events/${eventId}/media/${postId}`;
 
 run();

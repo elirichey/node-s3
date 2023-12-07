@@ -1,8 +1,9 @@
 export interface CLIArguments {
+  eventId: string;
+  post?: string;
   path?: string;
   key?: string;
   burn?: boolean;
-  eventId: string;
 }
 
 export interface Credentials {
