@@ -3,6 +3,7 @@ require("dotenv").config();
 import {
   ListObjectsCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
@@ -25,7 +26,7 @@ async function run() {
     .option("-p, --path <type>", pathMessage)
     .option("-x, --post <type>", postIdMessage)
     .option("-k, --key <type>", keyMessage)
-    .option("-b, --burn <type>", deleteMessage);
+    .option("-b, --burn", deleteMessage);
 
   program.parse(process.argv);
   const options: CLIArguments = program.opts();
@@ -112,18 +113,13 @@ async function run() {
     };
 
     const b2Credentials = new S3Client(b2Config);
-    console.log({ status: 100, message: "B2Client Initialized" });
-
-    const params = {
-      Bucket: BACKBLAZE_BUCKET_NAME,
-      Key: key,
-    };
-
+    const params = { Bucket: BACKBLAZE_BUCKET_NAME };
     const listCommand = new ListObjectsCommand(params);
     try {
       const data = await b2Credentials.send(listCommand);
-      console.log({ status: 200, message: "File List", data });
-      return data;
+      if (!data?.Contents) return [];
+      const res = data?.Contents.filter((x: any) => x?.Key.includes(keyVal));
+      return res;
     } catch (e) {
       console.log({ status: 400, body: e });
       return e;
@@ -200,7 +196,7 @@ async function run() {
   }
 
   // Delete
-  async function deleteFilesFromS3(id: string, postId: string) {
+  async function deleteFilesFromS3(id: string) {
     const credentials: Credentials = setupUploadCredentials(id);
     const {
       BACKBLAZE_ACCESS_KEY_ID,
@@ -222,22 +218,35 @@ async function run() {
     const b2Credentials = new S3Client(b2Config);
     console.log({ status: 100, message: "B2Client Initialized" });
 
-    const keyVal = `events/${id}/media/${postId}`;
-    const params = {
+    const keyVal = `events/${id}`;
+
+    // List Items
+    const data: any = await listFilesFromS3(keyVal);
+    const keys = data?.map((x: any) => ({ Key: x?.Key }));
+    if (!keys || keys.length === 0) {
+      console.log({ status: 400, message: "No Files Found" });
+      return { status: 400, message: "No Files Found" };
+    }
+
+    // Then Delete All Items
+    const bucketParams = {
       Bucket: BACKBLAZE_BUCKET_NAME,
-      Key: keyVal,
+      Delete: { Objects: keys },
     };
 
-    const deleteCommand = new DeleteObjectCommand(params);
+    const deleteCommand = new DeleteObjectsCommand(bucketParams);
     try {
       const data = await b2Credentials.send(deleteCommand);
-      console.log({ status: 200, message: "File Deleted", data });
+      const { Deleted } = data;
+      const message = `Deleted ${Deleted?.length} files`;
+      console.log({ status: 200, message, data, objects: Deleted });
       return data;
     } catch (e) {
       console.log({ status: 400, body: e });
       return e;
     }
   }
+
   async function deleteFileFromS3(id: string, postId: string) {
     const credentials: Credentials = setupUploadCredentials(id);
     const {
@@ -261,12 +270,22 @@ async function run() {
     console.log({ status: 100, message: "B2Client Initialized" });
 
     const keyVal = `events/${id}/media/${postId}`;
-    const params = {
+
+    const data: any = await listFilesFromS3(keyVal);
+    const keys = data?.map((x: any) => ({ Key: x?.Key }));
+
+    if (!keys || keys.length === 0) {
+      console.log({ status: 400, message: "No Files Found" });
+      return { status: 400, message: "No Files Found" };
+    }
+
+    const bucketParams = {
       Bucket: BACKBLAZE_BUCKET_NAME,
-      Key: keyVal,
+      Delete: { Objects: keys },
     };
 
-    const deleteCommand = new DeleteObjectCommand(params);
+    const deleteCommand = new DeleteObjectsCommand(bucketParams);
+
     try {
       const data = await b2Credentials.send(deleteCommand);
       console.log({ status: 200, message: "File Deleted", data });
@@ -277,13 +296,18 @@ async function run() {
     }
   }
 
-  console.log({ eventId, path, post, key, burn });
-
   if (key && !path) {
     const res = await listFilesFromS3(key);
     return res;
   } else if (burn && post) {
     const res = await deleteFileFromS3(eventId, post);
+    return res;
+  } else if (burn && !post) {
+    if (eventId.trim() === "") {
+      console.log({ status: 400, message: "Event Id is required" });
+      return { status: 400, message: "Event Id is required" };
+    }
+    const res = await deleteFilesFromS3(eventId);
     return res;
   } else if (path && !key) {
     const res = await multipartUploadFileToB2(path, eventId);
