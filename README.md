@@ -8,4 +8,4 @@ File Uploader CLI Tool for S3 or B2
 
 # Example
 
-`ts-node index.ts -e "event_id" -b`
+`ts-node index.ts -e "event_id" -d`
