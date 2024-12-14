@@ -43,11 +43,3 @@ export function setupQueryCredentials(bucketName: string) {
 
   return credentials;
 }
-
-export async function createB2Bucket() {
-
-}
-
-export async function deleteB2Bucket() {
-
-}
